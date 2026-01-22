@@ -2,14 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-// Connects to the same URL the site is hosted on
 const socket = io();
 
 function App() {
-  const [view, setView] = useState('LANDING'); // LANDING, INSTRUCTOR, STUDENT_LOGIN, CHAT
-  const [role, setRole] = useState(''); // 'INSTRUCTOR' or 'STUDENT'
-  
-  // State
+  const [view, setView] = useState('LANDING'); 
+  const [role, setRole] = useState(''); 
   const [threadId, setThreadId] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -41,8 +38,11 @@ function App() {
     });
 
     socket.on('thread_closed', () => {
-      alert("SESSION TERMINATED BY HOST.");
-      window.location.reload();
+      if (role === 'STUDENT') {
+         alert("SESSION TERMINATED BY HOST.");
+         window.location.reload();
+      }
+      // Instructor handles their own reload after save
     });
 
     socket.on('error', (err) => {
@@ -50,9 +50,8 @@ function App() {
     });
 
     return () => socket.off();
-  }, [threadId]);
+  }, [threadId, role]);
 
-  // Auto-scroll to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [notes]);
@@ -77,27 +76,49 @@ function App() {
     }
   };
 
-  const closeSession = () => {
-    if(window.confirm("TERMINATE SESSION AND SAVE DATA?")) {
-      socket.emit('close_thread', threadId);
-    }
+  // --- NEW: FUNCTION TO SAVE LOG FILE ---
+  const saveLogsToPC = () => {
+    // 1. Format the notes into a readable string
+    const fileContent = notes.map(n => {
+      if (n.system) return `[SYSTEM] ${n.text}`;
+      return `[${n.timestamp}] <${n.name}> ${n.text}`;
+    }).join('\n');
+
+    const header = `CLASS LOG - THREAD ${threadId}\nDATE: ${new Date().toLocaleDateString()}\n----------------------------\n\n`;
+    const fullContent = header + fileContent;
+
+    // 2. Create a blob (virtual file)
+    const blob = new Blob([fullContent], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+
+    // 3. Trigger a download link programmatically
+    const link = document.createElement('a');
+    link.download = `class_log_${threadId}.txt`;
+    link.href = url;
+    link.click();
   };
 
-  // --- VIEWS ---
+  const closeSession = () => {
+    if(window.confirm("TERMINATE SESSION AND DOWNLOAD LOGS?")) {
+      // Save the file first
+      saveLogsToPC();
+      
+      // Then close the room
+      socket.emit('close_thread', threadId);
+      
+      // Reset view for instructor
+      setTimeout(() => window.location.reload(), 1000);
+    }
+  };
 
   if (view === 'LANDING') {
     return (
       <div className="crt-container">
         <div className="scanline"></div>
         <div className="content center-screen">
-          
-          {/* UPDATED HEADER TEXT */}
           <h1>Chat App!</h1>
           <p>University of Southern California -- 2026</p>
           <p>Note taking app for DSO 531</p>
-          
-          <br /> {/* Small spacer */}
-
           <div className="menu">
             <button onClick={createThread}>[ INSTRUCTOR MODE ]</button>
             <button onClick={() => setView('STUDENT_LOGIN')}>[ STUDENT LOGIN ]</button>
